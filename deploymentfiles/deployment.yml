@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: mc-app
-        image: vali12/docimage1:latest:xyz
+        image: vali12/docimage1:xyz
         ports:
         - containerPort: 8080
 
