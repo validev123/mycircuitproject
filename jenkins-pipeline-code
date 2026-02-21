@@ -1,0 +1,81 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'maven3.9.9'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Cloning Repository'
+                git branch: 'master', url: 'https://github.com/validev123/mycircuitproject.git'
+            }
+        }
+
+        stage('Sonar') {
+            steps {
+                echo 'Scanning project with SonarQube'
+                sh 'ls -lrth'
+                sh """
+                    mvn sonar:sonar \
+                    -Dsonar.host.url=http://15.206.187.167:9000 \
+                    -Dsonar.login=squ_e821a9b96e4d7221ae5b0a0343375ea4aa3740ad
+                """
+            }
+        }
+
+        stage('Build Artifact') {
+            steps {
+                echo 'Building artifact'
+                sh 'mvn clean package'
+            }
+        }
+
+        stage('Docker Image') {
+            steps {
+                echo 'Building Docker image'
+                sh "docker build -t vali12/mongospring3:\${BUILD_NUMBER} ."
+            }
+        }
+
+        stage('Push to Dockerhub') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'dockerhub', variable: 'DOCKERHUB_PASS')]) {
+                        sh """
+                            docker login -u vali12 -p \$DOCKERHUB_PASS
+                            docker push vali12/mongospring3:\${BUILD_NUMBER}
+                            echo 'Pushed to Dockerhub'
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Update Deployment File') {
+    environment {
+        GIT_REPO_NAME = "mycircuitproject"
+        GIT_USER_NAME = "valigsk"
+    }
+    steps {
+        echo 'Updating deployment file'
+        withCredentials([string(credentialsId: 'githubtoken', variable: 'GITHUB_TOKEN')]) {
+            sh """
+                git config user.email "gsk.vali1255@gmail.com"
+                git config user.name "vali"
+                sed -i "s/mongospring3:.*/mongospring3:\${BUILD_NUMBER}/g" deploymentfiles/deployment.yml
+                git add deploymentfiles/deployment.yml
+                # Only commit if there are changes
+                if ! git diff --cached --quiet; then
+                    git commit -m "Update deployment image to version \${BUILD_NUMBER}"
+                    git push https://\$GITHUB_TOKEN@github.com/\${GIT_USER_NAME}/\${GIT_REPO_NAME} HEAD:master
+                else
+                    echo "No changes to commit"
+                fi
+            """
+            }
+        }
+    }
+  }
+}
